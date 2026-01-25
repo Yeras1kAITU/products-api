@@ -21,6 +21,144 @@ npm start
 # The server will run on http://localhost:3000
 ```
 
+Here's how to use your deployed API:
+
+## **Your API is LIVE at:**
+   **https://products-api-production-b5c4.up.railway.app**
+
+## **Quick Start:**
+
+### **1. View API Documentation**
+Open in browser: https://products-api-production-b5c4.up.railway.app/
+
+### **2. Test Basic Endpoints:**
+
+#### **Get all products:**
+```bash
+curl https://products-api-production-b5c4.up.railway.app/api/products
+```
+
+#### **Get specific product (ID 1):**
+```bash
+curl https://products-api-production-b5c4.up.railway.app/api/products/1
+```
+
+#### **Create new product:**
+```bash
+curl -X POST https://products-api-production-b5c4.up.railway.app/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"New Product","price":99.99,"category":"Electronics"}'
+```
+
+## **Complete Usage Guide:**
+
+### **CREATE (POST)**
+**Create a new product:**
+```bash
+curl -X POST https://products-api-production-b5c4.up.railway.app/api/products \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Wireless Mouse",
+    "price": 29.99,
+    "category": "Electronics",
+    "description": "Bluetooth mouse with long battery life",
+    "inStock": true
+  }'
+```
+
+### **READ (GET)**
+**Get all products with filters:**
+```bash
+# Get all
+curl https://products-api-production-b5c4.up.railway.app/api/products
+
+# Filter by category
+curl "https://products-api-production-b5c4.up.railway.app/api/products?category=Electronics"
+
+# Price range
+curl "https://products-api-production-b5c4.up.railway.app/api/products?minPrice=50&maxPrice=200"
+
+# In stock only
+curl "https://products-api-production-b5c4.up.railway.app/api/products?inStock=true"
+
+# Sort by price (descending)
+curl "https://products-api-production-b5c4.up.railway.app/api/products?sortBy=price&sortOrder=desc"
+
+# Pagination (page 1, 5 items per page)
+curl "https://products-api-production-b5c4.up.railway.app/api/products?page=1&limit=5"
+```
+
+**Get single product:**
+```bash
+curl https://products-api-production-b5c4.up.railway.app/api/products/1
+```
+
+**Get by category:**
+```bash
+curl https://products-api-production-b5c4.up.railway.app/api/products/category/Electronics
+```
+
+### **UPDATE (PUT)**
+**Update product details:**
+```bash
+curl -X PUT https://products-api-production-b5c4.up.railway.app/api/products/1 \
+  -H "Content-Type: application/json" \
+  -d '{"price": 89.99, "name": "Updated Product Name"}'
+```
+
+### **DELETE**
+**Delete a product:**
+```bash
+curl -X DELETE https://products-api-production-b5c4.up.railway.app/api/products/1
+```
+
+## **Quick Test Commands:**
+
+**Test the full CRUD cycle:**
+```bash
+# 1. Create
+curl -X POST https://products-api-production-b5c4.up.railway.app/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test Product","price":19.99,"category":"Test"}'
+
+# 2. Read (get the ID from above response)
+curl https://products-api-production-b5c4.up.railway.app/api/products/6
+
+# 3. Update
+curl -X PUT https://products-api-production-b5c4.up.railway.app/api/products/6 \
+  -H "Content-Type: application/json" \
+  -d '{"price":15.99}'
+
+# 4. Delete
+curl -X DELETE https://products-api-production-b5c4.up.railway.app/api/products/6
+```
+
+## **💡 Tips:**
+
+1. **Always use HTTPS** (not HTTP)
+2. **Set Content-Type: application/json** for POST/PUT requests
+3. **IDs are integers** (1, 2, 3... not MongoDB ObjectId)
+4. **Check response status codes:**
+    - 200: Success
+    - 201: Created
+    - 400: Bad request
+    - 404: Not found
+    - 500: Server error
+
+## **Test in Browser:**
+1. Open: https://products-api-production-b5c4.up.railway.app/
+2. You'll see interactive documentation
+3. Click links to test GET endpoints
+4. Use curl or Postman for POST/PUT/DELETE
+
+Your API is ready to use!
+
+```bash
+curl -X POST https://products-api-production-b5c4.up.railway.app/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"My First Product","price":9.99,"category":"Testing"}'
+```
+
 ### 4. Access the API
 Open your browser: [http://localhost:3000](http://localhost:3000)
 
