@@ -3,13 +3,17 @@ const { MongoClient } = require('mongodb');
 
 const app = express();
 
-// Use environment variables
 const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGO_URI || 'mongodb://localhost:27017';
+const MONGODB_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/shop';
 const DB_NAME = process.env.DB_NAME || 'shop';
 const COLLECTION_NAME = 'products';
 
-// Middleware for logging in production
+console.log('Starting server...');
+console.log('Environment:', process.env.NODE_ENV || 'development');
+console.log('Port:', PORT);
+console.log('Database name:', DB_NAME);
+console.log('MongoDB URI available:', !!process.env.MONGO_URI);
+
 if (process.env.NODE_ENV !== 'production') {
     app.use((req, res, next) => {
         console.log(`${req.method} ${req.url}`);
@@ -19,39 +23,86 @@ if (process.env.NODE_ENV !== 'production') {
 
 app.use(express.json());
 
-// Database variables
 let db;
 let productsCollection;
 let counterCollection;
 
 async function connectToDatabase() {
     try {
-        const client = await MongoClient.connect(MONGODB_URI);
+        console.log('🔄 Attempting to connect to MongoDB...');
+
+        const maskedUri = MONGODB_URI
+            ? MONGODB_URI.replace(/\/\/([^:]+):([^@]+)@/, '//****:****@')
+            : 'Not set';
+        console.log(`Using URI: ${maskedUri}`);
+        console.log(`Database: ${DB_NAME}`);
+
+        const connectionOptions = {
+            serverSelectionTimeoutMS: 10000,
+            connectTimeoutMS: 10000,
+            maxPoolSize: 10,
+            retryWrites: true,
+            w: 'majority'
+        };
+
+        console.log('Connecting with options:', {
+            serverSelectionTimeoutMS: connectionOptions.serverSelectionTimeoutMS,
+            connectTimeoutMS: connectionOptions.connectTimeoutMS
+        });
+
+        const client = await MongoClient.connect(MONGODB_URI, connectionOptions);
+
+        await client.db('admin').command({ ping: 1 });
+        console.log('MongoDB ping successful');
+
         db = client.db(DB_NAME);
         productsCollection = db.collection(COLLECTION_NAME);
         counterCollection = db.collection('counters');
 
-        console.log(`Connected to MongoDB database: ${DB_NAME}`);
+        console.log(`✅ Connected to MongoDB database: ${DB_NAME}`);
+        console.log(`✅ Collection ready: ${COLLECTION_NAME}`);
 
-        // Create indexes
+        console.log('Creating indexes...');
         await productsCollection.createIndex({ id: 1 }, { unique: true });
         await productsCollection.createIndex({ name: 1 });
+        console.log('✅ Indexes created');
 
-        // Initialize counter if not exists
         await counterCollection.updateOne(
             { _id: 'productId' },
             { $setOnInsert: { sequence_value: 1 } },
             { upsert: true }
         );
 
-        // Add sample data only in development
+        console.log('Counter initialized');
+
         if (process.env.NODE_ENV === 'development') {
             await addSampleData();
+        } else {
+            console.log('Production mode: Skipping sample data');
         }
 
         return client;
     } catch (error) {
-        console.error('Failed to connect to MongoDB:', error);
+        console.error('Failed to connect to MongoDB:', error.message);
+        console.error('Error details:', {
+            name: error.name,
+            code: error.code,
+            errorLabels: error.errorLabels
+        });
+
+        if (error.name === 'MongoServerSelectionError') {
+            console.error('\nConnection troubleshooting:');
+            console.error('1. Check if MONGO_URI is set in Railway variables');
+            console.error('2. Verify MongoDB Atlas IP whitelist includes 0.0.0.0/0');
+            console.error('3. Check database username/password');
+            console.error('4. Ensure cluster is fully created (takes 1-3 minutes)');
+        }
+
+        console.error('\nCurrent environment:');
+        console.error('NODE_ENV:', process.env.NODE_ENV);
+        console.error('PORT:', process.env.PORT);
+        console.error('MONGO_URI set:', !!process.env.MONGO_URI);
+
         process.exit(1);
     }
 }
