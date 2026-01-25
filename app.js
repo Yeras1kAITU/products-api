@@ -4,7 +4,7 @@ const { MongoClient } = require('mongodb');
 const app = express();
 
 const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/shop';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/shop';
 const DB_NAME = process.env.DB_NAME || 'shop';
 const COLLECTION_NAME = 'products';
 
@@ -31,8 +31,8 @@ async function connectToDatabase() {
     try {
         console.log('🔄 Attempting to connect to MongoDB...');
 
-        const maskedUri = MONGODB_URI
-            ? MONGODB_URI.replace(/\/\/([^:]+):([^@]+)@/, '//****:****@')
+        const maskedUri = MONGO_URI
+            ? MONGO_URI.replace(/\/\/([^:]+):([^@]+)@/, '//****:****@')
             : 'Not set';
         console.log(`Using URI: ${maskedUri}`);
         console.log(`Database: ${DB_NAME}`);
@@ -50,7 +50,7 @@ async function connectToDatabase() {
             connectTimeoutMS: connectionOptions.connectTimeoutMS
         });
 
-        const client = await MongoClient.connect(MONGODB_URI, connectionOptions);
+        const client = await MongoClient.connect(MONGO_URI, connectionOptions);
 
         await client.db('admin').command({ ping: 1 });
         console.log('MongoDB ping successful');
@@ -679,7 +679,7 @@ async function startServer() {
             console.log(`Server is running on port ${PORT}`);
             console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
             console.log(`Database: ${DB_NAME}`);
-            console.log(`MongoDB URI: ${MONGODB_URI.replace(/:[^:]*@/, ':****@')}`);
+            console.log(`MongoDB URI: ${MONGO_URI.replace(/:[^:]*@/, ':****@')}`);
             console.log('\nAvailable endpoints:');
             console.log(`  http://localhost:${PORT}/`);
             console.log(`  http://localhost:${PORT}/api/products`);
