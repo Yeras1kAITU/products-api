@@ -29,7 +29,7 @@ let counterCollection;
 
 async function connectToDatabase() {
     try {
-        console.log('🔄 Attempting to connect to MongoDB...');
+        console.log('Attempting to connect to MongoDB...');
 
         const maskedUri = MONGO_URI
             ? MONGO_URI.replace(/\/\/([^:]+):([^@]+)@/, '//****:****@')
@@ -59,13 +59,13 @@ async function connectToDatabase() {
         productsCollection = db.collection(COLLECTION_NAME);
         counterCollection = db.collection('counters');
 
-        console.log(`✅ Connected to MongoDB database: ${DB_NAME}`);
-        console.log(`✅ Collection ready: ${COLLECTION_NAME}`);
+        console.log(`Connected to MongoDB database: ${DB_NAME}`);
+        console.log(`Collection ready: ${COLLECTION_NAME}`);
 
         console.log('Creating indexes...');
         await productsCollection.createIndex({ id: 1 }, { unique: true });
         await productsCollection.createIndex({ name: 1 });
-        console.log('✅ Indexes created');
+        console.log('Indexes created');
 
         await counterCollection.updateOne(
             { _id: 'productId' },
@@ -261,6 +261,13 @@ app.get('/', (req, res) => {
     </html>
     `;
     res.send(html);
+});
+
+app.get('/version', (req, res) => {
+    res.status(200).json({
+        version: "1.1",
+        updatedAt: "2026-01-18"
+    });
 });
 
 // GET all products with filtering
