@@ -9,11 +9,41 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/shop';
 const DB_NAME = process.env.DB_NAME || 'shop';
 const COLLECTION_NAME = 'products';
 
+const API_KEY = process.env.API_KEY;
+
+if (!API_KEY) {
+    console.error('API_KEY is not set in environment variables');
+    process.exit(1);
+}
+
+const validateApiKey = (req, res, next) => {
+    const apiKey = req.headers['x-api-key'] || req.headers['authorization'];
+
+    if (!apiKey) {
+        return res.status(401).json({
+            success: false,
+            error: 'Unauthorized',
+            message: 'API key is required'
+        });
+    }
+
+    if (apiKey !== API_KEY) {
+        return res.status(403).json({
+            success: false,
+            error: 'Forbidden',
+            message: 'Invalid API key'
+        });
+    }
+
+    next();
+};
+
 console.log('Starting server...');
 console.log('Environment:', process.env.NODE_ENV || 'development');
 console.log('Port:', PORT);
 console.log('Database name:', DB_NAME);
 console.log('MongoDB URI available:', !!process.env.MONGO_URI);
+console.log('API Key loaded:', API_KEY ? 'Yes (' + API_KEY.substring(0, 8) + '...)' : 'No');
 
 if (process.env.NODE_ENV !== 'production') {
     app.use((req, res, next) => {
@@ -23,6 +53,17 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 app.use(express.json());
+
+const checkDatabaseConnection = (req, res, next) => {
+    if (!productsCollection || !counterCollection) {
+        return res.status(503).json({
+            success: false,
+            error: 'Service Unavailable',
+            message: 'Database is initializing. Please try again in a moment.'
+        });
+    }
+    next();
+};
 
 let db;
 let productsCollection;
@@ -110,16 +151,29 @@ async function connectToDatabase() {
 
 async function getNextSequence() {
     try {
+        if (!counterCollection) {
+            console.error('counterCollection is not initialized yet');
+            const timestampId = Math.floor(Date.now() / 1000) % 1000000;
+            console.log('Using timestamp fallback ID:', timestampId);
+            return timestampId;
+        }
+
         const result = await counterCollection.findOneAndUpdate(
             { _id: 'productId' },
             { $inc: { sequence_value: 1 } },
             { returnDocument: 'after' }
         );
 
+        if (!result || !result.value) {
+            throw new Error('Failed to get next sequence');
+        }
+
         return result.value.sequence_value;
     } catch (error) {
         console.error('Error getting next sequence:', error);
-        throw error;
+        const timestampId = Math.floor(Date.now() / 1000) % 1000000;
+        console.log('Using timestamp fallback ID due to error:', timestampId);
+        return timestampId;
     }
 }
 
@@ -265,12 +319,13 @@ app.get('/', (req, res) => {
 
 app.get('/version', (req, res) => {
     res.status(200).json({
-        version: "1.1",
-        updatedAt: "2026-01-18"
+        success: true,
+        version: "2.0",
+        updatedAt: "2026-02-01",
+        features: ["Products API", "Items API", "API Key Protection"]
     });
 });
 
-// GET all products with filtering
 app.get('/api/products', async (req, res) => {
     try {
         const {
@@ -345,12 +400,11 @@ app.get('/api/products', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Internal server error',
-            message: error.message
+            message: 'Failed to retrieve products'
         });
     }
 });
 
-// GET product by ID
 app.get('/api/products/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -387,17 +441,15 @@ app.get('/api/products/:id', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Internal server error',
-            message: error.message
+            message: 'Failed to retrieve product'
         });
     }
 });
 
-// POST create new product
-app.post('/api/products', async (req, res) => {
+app.post('/api/products', validateApiKey, checkDatabaseConnection, async (req, res) => {
     try {
         const { name, price, category, description, inStock } = req.body;
 
-        // Required fields validation
         if (!name || !price || !category) {
             const missingFields = [];
             if (!name) missingFields.push('name');
@@ -412,7 +464,6 @@ app.post('/api/products', async (req, res) => {
             });
         }
 
-        // Price validation
         if (typeof price !== 'number' || isNaN(price)) {
             return res.status(400).json({
                 success: false,
@@ -429,10 +480,8 @@ app.post('/api/products', async (req, res) => {
             });
         }
 
-        // Get next ID from sequence
         const nextId = await getNextSequence();
 
-        // Create product object
         const newProduct = {
             id: nextId,
             name: name.trim(),
@@ -444,7 +493,6 @@ app.post('/api/products', async (req, res) => {
             updatedAt: new Date()
         };
 
-        // Check if product with same name exists
         const existingProduct = await productsCollection.findOne({
             name: newProduct.name
         });
@@ -458,10 +506,8 @@ app.post('/api/products', async (req, res) => {
             });
         }
 
-        // Insert product
         await productsCollection.insertOne(newProduct);
 
-        // Remove MongoDB _id from response
         const createdProduct = { ...newProduct };
         delete createdProduct._id;
 
@@ -475,12 +521,11 @@ app.post('/api/products', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Internal server error',
-            message: error.message
+            message: 'Failed to create product'
         });
     }
 });
 
-// GET products by category
 app.get('/api/products/category/:category', async (req, res) => {
     try {
         const { category } = req.params;
@@ -514,13 +559,12 @@ app.get('/api/products/category/:category', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Internal server error',
-            message: error.message
+            message: 'Failed to retrieve products by category'
         });
     }
 });
 
-// PUT update product
-app.put('/api/products/:id', async (req, res) => {
+app.put('/api/products/:id', validateApiKey, checkDatabaseConnection, async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
@@ -534,7 +578,6 @@ app.put('/api/products/:id', async (req, res) => {
             });
         }
 
-        // Check if product exists
         const existingProduct = await productsCollection.findOne({
             id: productId
         });
@@ -547,7 +590,6 @@ app.put('/api/products/:id', async (req, res) => {
             });
         }
 
-        // Validate and prepare updates
         const { name, price, category, description, inStock } = updates;
         const allowedUpdates = {};
 
@@ -568,7 +610,6 @@ app.put('/api/products/:id', async (req, res) => {
 
         allowedUpdates.updatedAt = new Date();
 
-        // Update product
         const result = await productsCollection.updateOne(
             { id: productId },
             { $set: allowedUpdates }
@@ -582,7 +623,6 @@ app.put('/api/products/:id', async (req, res) => {
             });
         }
 
-        // Get updated product
         const updatedProduct = await productsCollection.findOne(
             { id: productId },
             { projection: { _id: 0 } }
@@ -598,13 +638,12 @@ app.put('/api/products/:id', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Internal server error',
-            message: error.message
+            message: 'Failed to update product'
         });
     }
 });
 
-// DELETE product
-app.delete('/api/products/:id', async (req, res) => {
+app.delete('/api/products/:id', validateApiKey, checkDatabaseConnection, async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -617,7 +656,6 @@ app.delete('/api/products/:id', async (req, res) => {
             });
         }
 
-        // Check if product exists
         const existingProduct = await productsCollection.findOne({
             id: productId
         });
@@ -630,7 +668,6 @@ app.delete('/api/products/:id', async (req, res) => {
             });
         }
 
-        // Delete product
         const result = await productsCollection.deleteOne({ id: productId });
 
         res.status(200).json({
@@ -644,15 +681,13 @@ app.delete('/api/products/:id', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Internal server error',
-            message: error.message
+            message: 'Failed to delete product'
         });
     }
 });
 
-// Add items router (with built-in protection)
 app.use('/api/items', itemsRouter);
 
-// 404 handler for API endpoints
 app.use((req, res) => {
     res.status(404).json({
         success: false,
@@ -663,14 +698,19 @@ app.use((req, res) => {
             'GET /api/products',
             'GET /api/products/:id (integer)',
             'GET /api/products/category/:category',
-            'POST /api/products',
-            'PUT /api/products/:id',
-            'DELETE /api/products/:id'
+            'POST /api/products (requires API key)',
+            'PUT /api/products/:id (requires API key)',
+            'DELETE /api/products/:id (requires API key)',
+            'GET /api/items',
+            'GET /api/items/:id',
+            'POST /api/items (requires API key)',
+            'PUT /api/items/:id (requires API key)',
+            'PATCH /api/items/:id (requires API key)',
+            'DELETE /api/items/:id (requires API key)'
         ]
     });
 });
 
-// Error handler
 app.use((error, req, res, next) => {
     console.error('Unhandled error:', error);
     res.status(500).json({
@@ -680,10 +720,11 @@ app.use((error, req, res, next) => {
     });
 });
 
-// Start server
 async function startServer() {
     try {
+        console.log('Starting database connection...');
         await connectToDatabase();
+        console.log('Database connection established successfully');
 
         app.listen(PORT, () => {
             console.log(`Server is running on port ${PORT}`);
@@ -696,6 +737,8 @@ async function startServer() {
             console.log(`  http://localhost:${PORT}/api/products/1`);
             console.log(`  http://localhost:${PORT}/api/products/category/Electronics`);
             console.log(`  http://localhost:${PORT}/api/items`);
+            console.log('\nAPI Key Protection: Enabled');
+            console.log('Protected endpoints: POST, PUT, DELETE');
         });
     } catch (error) {
         console.error('Failed to start server:', error);
@@ -703,7 +746,6 @@ async function startServer() {
     }
 }
 
-// Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
     console.error('Uncaught Exception:', error);
     process.exit(1);

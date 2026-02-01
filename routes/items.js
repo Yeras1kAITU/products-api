@@ -25,8 +25,6 @@ const validateApiKey = (req, res, next) => {
     }
 
     if (apiKey !== API_KEY) {
-        console.log('Invalid API key provided:', apiKey.substring(0, 8) + '...');
-        console.log('Expected:', API_KEY.substring(0, 8) + '...');
         return res.status(403).json({
             success: false,
             error: 'Forbidden',
@@ -71,6 +69,12 @@ async function connectToItemsDatabase() {
 
 async function getNextItemId() {
     try {
+        if (!itemsCounterCollection) {
+            console.error('itemsCounterCollection is not initialized yet');
+            const timestampId = Math.floor(Date.now() / 1000) % 1000000;
+            return timestampId;
+        }
+
         const existingCounter = await itemsCounterCollection.findOne({ _id: 'itemId' });
 
         if (!existingCounter) {
@@ -94,6 +98,11 @@ async function getNextItemId() {
         }
     } catch (error) {
         console.error('Error in getNextItemId:', error.message);
+        if (!itemsCollection) {
+            const timestampId = Math.floor(Date.now() / 1000) % 1000000;
+            return timestampId;
+        }
+
         const lastItem = await itemsCollection
             .find()
             .sort({ id: -1 })
@@ -169,6 +178,17 @@ async function addSampleItems() {
         console.error('Error adding sample items:', error);
     }
 }
+
+const checkItemsDatabaseConnection = (req, res, next) => {
+    if (!itemsCollection || !itemsCounterCollection) {
+        return res.status(503).json({
+            success: false,
+            error: 'Service Unavailable',
+            message: 'Items database is initializing. Please try again in a moment.'
+        });
+    }
+    next();
+};
 
 connectToItemsDatabase()
     .then(() => addSampleItems())
@@ -285,7 +305,7 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-router.post('/', validateApiKey, async (req, res) => {
+router.post('/', validateApiKey, checkItemsDatabaseConnection, async (req, res) => {
     try {
         const { name, description, price, category, inStock } = req.body;
 
@@ -375,7 +395,7 @@ router.post('/', validateApiKey, async (req, res) => {
     }
 });
 
-router.put('/:id', validateApiKey, async (req, res) => {
+router.put('/:id', validateApiKey, checkItemsDatabaseConnection, async (req, res) => {
     try {
         const id = parseInt(req.params.id);
 
@@ -457,7 +477,7 @@ router.put('/:id', validateApiKey, async (req, res) => {
     }
 });
 
-router.patch('/:id', validateApiKey, async (req, res) => {
+router.patch('/:id', validateApiKey, checkItemsDatabaseConnection, async (req, res) => {
     try {
         const id = parseInt(req.params.id);
 
@@ -543,7 +563,7 @@ router.patch('/:id', validateApiKey, async (req, res) => {
     }
 });
 
-router.delete('/:id', validateApiKey, async (req, res) => {
+router.delete('/:id', validateApiKey, checkItemsDatabaseConnection, async (req, res) => {
     try {
         const id = parseInt(req.params.id);
 
