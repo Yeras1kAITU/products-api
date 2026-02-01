@@ -6,6 +6,37 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/shop';
 const DB_NAME = process.env.DB_NAME || 'shop';
 const COLLECTION_NAME = 'items';
 
+const API_KEY = process.env.API_KEY;
+
+if (!API_KEY) {
+    console.error('API_KEY is not set in environment variables');
+    process.exit(1);
+}
+
+const validateApiKey = (req, res, next) => {
+    const apiKey = req.headers['x-api-key'] || req.headers['authorization'];
+
+    if (!apiKey) {
+        return res.status(401).json({
+            success: false,
+            error: 'Unauthorized',
+            message: 'API key is required'
+        });
+    }
+
+    if (apiKey !== API_KEY) {
+        console.log('Invalid API key provided:', apiKey.substring(0, 8) + '...');
+        console.log('Expected:', API_KEY.substring(0, 8) + '...');
+        return res.status(403).json({
+            success: false,
+            error: 'Forbidden',
+            message: 'Invalid API key'
+        });
+    }
+
+    next();
+};
+
 let db;
 let itemsCollection;
 let itemsCounterCollection;
@@ -38,6 +69,42 @@ async function connectToItemsDatabase() {
     }
 }
 
+async function getNextItemId() {
+    try {
+        const existingCounter = await itemsCounterCollection.findOne({ _id: 'itemId' });
+
+        if (!existingCounter) {
+            await itemsCounterCollection.insertOne({
+                _id: 'itemId',
+                sequence_value: 1
+            });
+            return 1;
+        }
+
+        const result = await itemsCounterCollection.findOneAndUpdate(
+            { _id: 'itemId' },
+            { $inc: { sequence_value: 1 } },
+            { returnDocument: 'after' }
+        );
+
+        if (result && result.value) {
+            return result.value.sequence_value;
+        } else {
+            return existingCounter.sequence_value + 1;
+        }
+    } catch (error) {
+        console.error('Error in getNextItemId:', error.message);
+        const lastItem = await itemsCollection
+            .find()
+            .sort({ id: -1 })
+            .limit(1)
+            .toArray();
+
+        const nextId = lastItem.length > 0 ? lastItem[0].id + 1 : 1;
+        return nextId;
+    }
+}
+
 async function addSampleItems() {
     try {
         const count = await itemsCollection.countDocuments();
@@ -45,7 +112,6 @@ async function addSampleItems() {
         if (count === 0) {
             console.log('No items found. Adding sample data...');
 
-            // Update counter to start from 5
             await itemsCounterCollection.updateOne(
                 { _id: 'itemId' },
                 { $set: { sequence_value: 5 } }
@@ -94,65 +160,13 @@ async function addSampleItems() {
                 }
             ];
 
-            const result = await itemsCollection.insertMany(sampleItems);
-            console.log(`${result.insertedCount} sample items added to collection`);
+            await itemsCollection.insertMany(sampleItems);
+            console.log(`${sampleItems.length} sample items added to collection`);
         } else {
             console.log(`Found ${count} existing items in the database`);
         }
     } catch (error) {
         console.error('Error adding sample items:', error);
-    }
-}
-
-
-async function getNextItemId() {
-    try {
-        console.log('Getting next item ID...');
-
-        const result = await itemsCounterCollection.findOneAndUpdate(
-            { _id: 'itemId' },
-            { $inc: { sequence_value: 1 } },
-            {
-                upsert: true,
-                returnOriginal: false,
-                projection: { sequence_value: 1 }
-            }
-        );
-
-        console.log('Counter update result:', result);
-
-        if (result && result.value) {
-            console.log('Found in result.value:', result.value.sequence_value);
-            return result.value.sequence_value;
-        }
-        else if (result && result.sequence_value !== undefined) {
-            console.log('Found in result:', result.sequence_value);
-            return result.sequence_value;
-        }
-        else if (result && result.lastErrorObject && result.lastErrorObject.upserted) {
-            console.log('New counter created, starting from 1');
-            return 1;
-        }
-        else {
-            console.log('Using fallback method');
-            const counter = await itemsCounterCollection.findOne({ _id: 'itemId' });
-            if (counter && counter.sequence_value) {
-                return counter.sequence_value;
-            } else {
-                await itemsCounterCollection.updateOne(
-                    { _id: 'itemId' },
-                    { $set: { sequence_value: 1 } },
-                    { upsert: true }
-                );
-                return 1;
-            }
-        }
-    } catch (error) {
-        console.error('Error in getNextItemId:', error.message);
-
-        const timestampId = Math.floor(Date.now() / 1000) % 1000000;
-        console.log('Using timestamp fallback ID:', timestampId);
-        return timestampId;
     }
 }
 
@@ -271,60 +285,88 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', validateApiKey, async (req, res) => {
     try {
         const { name, description, price, category, inStock } = req.body;
 
-        const newItem = {
-            name: name?.trim(),
-            description: description?.trim() || '',
-            price: price !== undefined ? parseFloat(price) : undefined,
-            category: category?.trim() || 'General',
-            inStock: inStock !== undefined ? Boolean(inStock) : true
-        };
-
-        const validationErrors = validateItem(newItem, false);
-
-        if (validationErrors.length > 0) {
+        if (!name || name.trim() === '') {
             return res.status(400).json({
                 success: false,
                 error: 'Validation failed',
-                message: 'Please correct the following errors:',
-                errors: validationErrors
+                message: 'Name is required'
+            });
+        }
+
+        if (price === undefined || typeof price !== 'number' || isNaN(price)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation failed',
+                message: 'Price must be a valid number'
+            });
+        }
+
+        if (price < 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation failed',
+                message: 'Price cannot be negative'
+            });
+        }
+
+        if (!category || category.trim() === '') {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation failed',
+                message: 'Category is required'
             });
         }
 
         const existingItem = await itemsCollection.findOne({
-            name: newItem.name
+            name: { $regex: new RegExp(`^${name.trim()}$`, 'i') }
         });
 
         if (existingItem) {
             return res.status(409).json({
                 success: false,
                 error: 'Duplicate item',
-                message: `An item with name "${newItem.name}" already exists`
+                message: `An item with name "${name}" already exists`
             });
         }
 
         const nextId = await getNextItemId();
-        const completeItem = {
+
+        const newItem = {
             id: nextId,
-            ...newItem,
+            name: name.trim(),
+            description: description ? description.trim() : '',
+            price: parseFloat(price.toFixed(2)),
+            category: category.trim(),
+            inStock: inStock !== undefined ? Boolean(inStock) : true,
             createdAt: new Date(),
             updatedAt: new Date()
         };
 
-        await itemsCollection.insertOne(completeItem);
+        const result = await itemsCollection.insertOne(newItem);
 
-        const { _id, ...responseItem } = completeItem;
+        const { _id, ...responseItem } = newItem;
 
         res.status(201).json({
             success: true,
             message: 'Item created successfully',
             item: responseItem
         });
+
     } catch (error) {
         console.error('Error creating item:', error);
+
+        if (error.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                error: 'Duplicate ID',
+                message: 'Item with this ID already exists'
+            });
+        }
+
         res.status(500).json({
             success: false,
             error: 'Internal server error',
@@ -333,7 +375,7 @@ router.post('/', async (req, res) => {
     }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', validateApiKey, async (req, res) => {
     try {
         const id = parseInt(req.params.id);
 
@@ -415,7 +457,7 @@ router.put('/:id', async (req, res) => {
     }
 });
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', validateApiKey, async (req, res) => {
     try {
         const id = parseInt(req.params.id);
 
@@ -501,7 +543,7 @@ router.patch('/:id', async (req, res) => {
     }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', validateApiKey, async (req, res) => {
     try {
         const id = parseInt(req.params.id);
 

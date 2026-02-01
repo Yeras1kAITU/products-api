@@ -9,7 +9,6 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/shop';
 const DB_NAME = process.env.DB_NAME || 'shop';
 const COLLECTION_NAME = 'products';
 
-
 console.log('Starting server...');
 console.log('Environment:', process.env.NODE_ENV || 'development');
 console.log('Port:', PORT);
@@ -650,6 +649,7 @@ app.delete('/api/products/:id', async (req, res) => {
     }
 });
 
+// Add items router (with built-in protection)
 app.use('/api/items', itemsRouter);
 
 // 404 handler for API endpoints
@@ -695,6 +695,7 @@ async function startServer() {
             console.log(`  http://localhost:${PORT}/api/products`);
             console.log(`  http://localhost:${PORT}/api/products/1`);
             console.log(`  http://localhost:${PORT}/api/products/category/Electronics`);
+            console.log(`  http://localhost:${PORT}/api/items`);
         });
     } catch (error) {
         console.error('Failed to start server:', error);
