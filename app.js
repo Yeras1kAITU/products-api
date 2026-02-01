@@ -1,5 +1,6 @@
 const express = require('express');
 const { MongoClient } = require('mongodb');
+const itemsRouter = require('./routes/items');
 
 const app = express();
 
@@ -7,6 +8,7 @@ const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/shop';
 const DB_NAME = process.env.DB_NAME || 'shop';
 const COLLECTION_NAME = 'products';
+
 
 console.log('Starting server...');
 console.log('Environment:', process.env.NODE_ENV || 'development');
@@ -197,7 +199,6 @@ async function addSampleData() {
     }
 }
 
-// Root endpoint
 app.get('/', (req, res) => {
     const html = `
     <!DOCTYPE html>
@@ -648,6 +649,8 @@ app.delete('/api/products/:id', async (req, res) => {
         });
     }
 });
+
+app.use('/api/items', itemsRouter);
 
 // 404 handler for API endpoints
 app.use((req, res) => {
